@@ -2,6 +2,7 @@ package com.example.cs4530_a3
 
 import android.app.Application
 import android.os.Bundle
+import android.view.Display
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -30,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.cs4530_a3.room.CourseEntity
@@ -42,27 +42,29 @@ import kotlinx.coroutines.flow.stateIn
 /**
  * This class holds the VM and the Repository
  */
-class VMM(private val repository: Repository) : ViewModel() {
+class VMM(application: Application) : AndroidViewModel(application) {
+
+    // Model (using Repository)
+    val dao=(application as CourseApp).repository
 
     // Converting the Flow to StateFlow for UI Compose
-    val dataReadOnly: StateFlow<List<CourseEntity>> = repository.allCourses
+    val dataReadOnly: StateFlow<List<CourseEntity>> = dao.allCourses
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Adds new course
     fun addCourse(courseNumber: String, department: String, location: String, courseDetails : String)
     {
-        repository.addCourse(courseNumber, department, location, courseDetails)
+        dao.addCourse(courseNumber, department, location, courseDetails)
     }
 
     fun removeCourse(courseID: Int) {
-        repository.deleteCourse(courseID)
+        dao.deleteCourse(courseID)
     }
 
     suspend fun getCourse(courseID: Int): CourseEntity {
 
-        return repository.getCourse(courseID)
+        return dao.getCourse(courseID)
     }
-
 
 }
 
@@ -100,15 +102,18 @@ fun Content(vm : VMM) {
             val courseList by vm.dataReadOnly.collectAsState(emptyList())
             var showPopup by remember { mutableStateOf(false)}
             var currentCourse: Int by remember{ mutableStateOf(0)}
+            var course: CourseEntity? by remember { mutableStateOf(null) }
 
-            if (showPopup) {
-                lateinit var course: CourseEntity
-                LaunchedEffect(currentCourse) {
-                    course = vm.getCourse(currentCourse) // suspend call inside LaunchedEffect
+            if (showPopup){
+
+                // Display the data async
+                LaunchedEffect(Unit) {
+                    course = vm.getCourse(currentCourse)
                 }
-
-                DisplayInfo(course, {showPopup = false})
             }
+
+            // If course isn't null call display info
+            course?.let { DisplayInfo(it, {course = null;showPopup = false}) }
 
             // Lazy Column for the course list
             LazyColumn (

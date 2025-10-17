@@ -8,7 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 
 class CourseApp : Application() {
-    val scope =CoroutineScope(SupervisorJob())
+    val scope = CoroutineScope(SupervisorJob())
     val db by lazy {
         Room.databaseBuilder(
             applicationContext,
