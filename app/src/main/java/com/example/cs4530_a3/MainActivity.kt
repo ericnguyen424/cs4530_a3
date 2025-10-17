@@ -1,15 +1,12 @@
 package com.example.cs4530_a3
 
-import android.app.AlertDialog
-import android.content.ContentValues.TAG
+import android.app.Application
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,13 +14,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,58 +28,43 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.cs4530_a3.room.CourseEntity
 import com.example.cs4530_a3.ui.theme.Cs4530_a3Theme
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 
 /**
- * This class holds the VM and the Model and will be used to store the course list
+ * This class holds the VM and the Repository
  */
-class VMM : ViewModel()
-{
-    // model
-    private val data = MutableStateFlow(listOf<Course>())
+class VMM(private val repository: Repository) : ViewModel() {
 
-    val dataReadOnly : StateFlow<List<Course>> = data
+    // Converting the Flow to StateFlow for UI Compose
+    val dataReadOnly: StateFlow<List<CourseEntity>> = repository.allCourses
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun addCourse (item: Course) {
-        data.value = data.value + item
+    // Adds new course
+    fun addCourse(courseNumber: String, department: String, location: String, courseDetails : String)
+    {
+        repository.addCourse(courseNumber, department, location, courseDetails)
     }
 
-    fun removeCourse(item: Course) {
-        data.value = data.value.filter({ it.id != item.id })
+    fun removeCourse(courseID: Int) {
+        repository.deleteCourse(courseID)
     }
 
-    fun getCourse(courseID: Int): Course {
-        return data.value.filter({it.id == courseID}).elementAt(0)
+    suspend fun getCourse(courseID: Int): CourseEntity {
+
+        return repository.getCourse(courseID)
     }
+
+
 }
-
-/**
- * This is the class for a Course which takes in a department, course number, and a location
- */
-class Course(private val courseNumber: String, private val department: String, private val location: String, private val courseDetails : String) {
-    val id = "$department$courseNumber$location$courseDetails".hashCode()
-
-    fun getCourseName() : String {
-        return "$department$courseNumber"
-    }
-
-    fun getLocation() : String {
-        return location
-    }
-
-    fun getDetails() : String {
-        return courseDetails
-    }
-}
-
-
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -116,12 +97,16 @@ fun Content(vm : VMM) {
         ) {
 
 
-            val courseList by vm.dataReadOnly.collectAsState()
+            val courseList by vm.dataReadOnly.collectAsState(emptyList())
             var showPopup by remember { mutableStateOf(false)}
-            var currentCourse by remember{ mutableStateOf(0)}
+            var currentCourse: Int by remember{ mutableStateOf(0)}
 
             if (showPopup) {
-                var course = vm.getCourse(currentCourse)
+                lateinit var course: CourseEntity
+                LaunchedEffect(currentCourse) {
+                    course = vm.getCourse(currentCourse) // suspend call inside LaunchedEffect
+                }
+
                 DisplayInfo(course, {showPopup = false})
             }
 
@@ -147,11 +132,11 @@ fun Content(vm : VMM) {
                                 showPopup = true
                             },
                         ) {
-                            Text(text = "${course.getCourseName()} at ${course.getLocation()}", color = Color.White)
+                            Text(text = "${course.department + course.courseNumber} at ${course.location}", color = Color.White)
                         }
 
                         Row {
-                            RemoveCourse(vm, course)
+                            RemoveCourse(vm, course.id)
                         }
 
                     }
@@ -217,8 +202,7 @@ fun Content(vm : VMM) {
                             return@Button
                         }
                         // handle submit
-                        val newCourse = Course(courseNumber, department, location, details)
-                        vm.addCourse(newCourse)
+                        vm.addCourse(courseNumber, department, location, details)
                         courseNumber = ""
                         location = ""
                         details = ""
@@ -233,10 +217,10 @@ fun Content(vm : VMM) {
 }
 
 @Composable
-fun RemoveCourse(vm: VMM, courseToRemove: Course) {
+fun RemoveCourse(vm: VMM, courseID: Int) {
     Button(
         onClick = {
-            vm.removeCourse(courseToRemove)
+            vm.removeCourse(courseID)
         },
     ) {
         Text("Remove")
@@ -244,13 +228,13 @@ fun RemoveCourse(vm: VMM, courseToRemove: Course) {
 }
 
 @Composable
-fun DisplayInfo(course: Course, onDismiss:() -> Unit) {
+fun DisplayInfo(course: CourseEntity, onDismiss: () -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(course.getCourseName())},
+        title = { Text(course.department + course.courseNumber)},
         text = {
-            Text(course.getDetails())
+            Text(course.courseDetails)
         },
         confirmButton = {
             Button(onClick = onDismiss) {
